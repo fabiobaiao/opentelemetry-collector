@@ -320,6 +320,8 @@ func (pq *persistentQueue[T]) putInternal(ctx context.Context, req T) error {
 }
 
 func (pq *persistentQueue[T]) Read(ctx context.Context) (context.Context, T, Done, bool) {
+	pq.logger.Info("Read")
+	defer pq.logger.Info("Return read")
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
 
@@ -331,6 +333,7 @@ func (pq *persistentQueue[T]) Read(ctx context.Context) (context.Context, T, Don
 
 		// Read until either a successful retrieved element or no more elements in the storage.
 		for pq.metadata.ReadIndex != pq.metadata.WriteIndex {
+			pq.logger.Info("Getting next item")
 			index, req, reqCtx, consumed := pq.getNextItem(ctx)
 			// Ensure the used size are in sync when queue is drained.
 			if pq.requestSize() == 0 {
@@ -340,6 +343,7 @@ func (pq *persistentQueue[T]) Read(ctx context.Context) (context.Context, T, Don
 			if consumed {
 				id := indexDonePool.Get().(*indexDone)
 				id.reset(index, pq.itemsSizer.Sizeof(req), pq.bytesSizer.Sizeof(req), pq)
+				pq.logger.Info("Got next item", zap.Uint64("index", index), zap.Bool("consumed", consumed), zap.Int64("bytesSize", id.bytesSize), zap.Int64("itemsSize", id.itemsSize))
 				return reqCtx, req, id, true
 			}
 			// More space available, data was dropped.
@@ -356,6 +360,8 @@ func (pq *persistentQueue[T]) Read(ctx context.Context) (context.Context, T, Don
 // finished, the index should be called with onDone to clean up the storage. If no new item is available,
 // returns false.
 func (pq *persistentQueue[T]) getNextItem(ctx context.Context) (uint64, T, context.Context, bool) {
+	pq.logger.Info("getNextItem")
+	defer pq.logger.Info("Return getNextItem")
 	index := pq.metadata.ReadIndex
 	// Increase here, so even if errors happen below, it always iterates
 	pq.metadata.ReadIndex++
@@ -369,8 +375,10 @@ func (pq *persistentQueue[T]) getNextItem(ctx context.Context) (uint64, T, conte
 	}
 
 	getOp := storage.GetOperation(getItemKey(index))
+	pq.logger.Info("Handle storage operations", zap.Uint64("index", index))
 	err = pq.client.Batch(ctx, storage.SetOperation(metadataKey, metadataBytes), getOp)
 	if err == nil {
+		pq.logger.Info("Unmarshalling")
 		restoredCtx, req, err = pq.encoding.Unmarshal(getOp.Value)
 	}
 

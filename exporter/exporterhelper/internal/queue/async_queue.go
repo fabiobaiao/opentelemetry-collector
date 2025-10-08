@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 
 	"go.opentelemetry.io/collector/component"
 )
@@ -18,14 +19,16 @@ type asyncQueue[T any] struct {
 	refCounter   ReferenceCounter[T]
 	consumeFunc  ConsumeFunc[T]
 	stopWG       sync.WaitGroup
+	logger       *zap.Logger
 }
 
-func newAsyncQueue[T any](q readableQueue[T], numConsumers int, consumeFunc ConsumeFunc[T], refCounter ReferenceCounter[T]) Queue[T] {
+func newAsyncQueue[T any](q readableQueue[T], numConsumers int, consumeFunc ConsumeFunc[T], refCounter ReferenceCounter[T], telemetry component.TelemetrySettings) Queue[T] {
 	return &asyncQueue[T]{
 		readableQueue: q,
 		numConsumers:  numConsumers,
 		refCounter:    refCounter,
 		consumeFunc:   consumeFunc,
+		logger:        telemetry.Logger,
 	}
 }
 
@@ -42,7 +45,9 @@ func (qc *asyncQueue[T]) Start(ctx context.Context, host component.Host) error {
 			startWG.Done()
 			defer qc.stopWG.Done()
 			for {
+				qc.logger.Info("Reading from queue")
 				ctx, req, done, ok := qc.Read(context.Background())
+				qc.logger.Info("Read from queue", zap.Bool("ok", ok))
 				if !ok {
 					return
 				}

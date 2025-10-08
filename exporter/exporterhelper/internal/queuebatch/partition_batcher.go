@@ -66,6 +66,8 @@ func (qb *partitionBatcher) resetTimer() {
 }
 
 func (qb *partitionBatcher) Consume(ctx context.Context, req request.Request, done queue.Done) {
+	qb.logger.Info("Consume", zap.Any("req.ItemsCount", req.ItemsCount()))
+	defer qb.logger.Info("Return consume")
 	qb.currentBatchMu.Lock()
 
 	if qb.currentBatch == nil {
@@ -206,6 +208,7 @@ func (qb *partitionBatcher) Start(context.Context, component.Host) error {
 			case <-qb.shutdownCh:
 				return
 			case <-qb.timer.C:
+				qb.logger.Info("Flush timeout reached")
 				qb.flushCurrentBatchIfNecessary()
 			}
 		}
@@ -240,6 +243,8 @@ func (qb *partitionBatcher) flushCurrentBatchIfNecessary() {
 
 // flush starts a goroutine that calls consumeFunc. It blocks until a worker is available if necessary.
 func (qb *partitionBatcher) flush(ctx context.Context, req request.Request, done queue.Done) {
+	qb.logger.Info("Flush", zap.Any("req.ItemsCount", req.ItemsCount()))
+	defer qb.logger.Info("Return flush")
 	qb.stopWG.Add(1)
 	qb.wp.execute(func() {
 		defer qb.stopWG.Done()
